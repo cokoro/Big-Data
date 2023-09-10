@@ -2,7 +2,38 @@
 
 <!-- GFM-TOC -->
 
-<!-- GFM-TOC -->
+<!-- GFM-TOC -->- [Spark](#spark)
+- [Spark](#spark)
+  - [Spark的基础架构？](#spark的基础架构)
+    - [Driver是怎么去调用excutor的?](#driver是怎么去调用excutor的)
+      - [driver，executor，master，worker之间的关系?](#driverexecutormasterworker之间的关系)
+    - [对于多个excutor是怎么配置的？](#对于多个excutor是怎么配置的)
+      - [什么是RDD？](#什么是rdd)
+    - [Spark启动一个application的过程](#spark启动一个application的过程)
+    - [RDD的运行过程](#rdd的运行过程)
+  - [如何优化Spark的计算?](#如何优化spark的计算)
+    - [持久化策略](#持久化策略)
+    - [Shuffle 算子优化](#shuffle-算子优化)
+      - [coalesce](#coalesce)
+      - [使用 broadcast 替代 join：](#使用-broadcast-替代-join)
+      - [换方法(distinct and group by)：](#换方法distinct-and-group-by)
+        - [为什么？](#为什么)
+      - [Group by and reduceByKey](#group-by-and-reducebykey)
+        - [为什么？](#为什么-1)
+      - [使用filter之后进行coalesce操作](#使用filter之后进行coalesce操作)
+      - [使用repartitionAndSortWithinPartitions替代repartition与sort类操作](#使用repartitionandsortwithinpartitions替代repartition与sort类操作)
+      - [广播大变量](#广播大变量)
+        - [为什么广播能起到优化的效果呢？](#为什么广播能起到优化的效果呢)
+  - [高级调优方法](#高级调优方法)
+    - [解决方案一：使用Hive ETL预处理数据](#解决方案一使用hive-etl预处理数据)
+    - [解决方案二：过滤少数导致倾斜的key](#解决方案二过滤少数导致倾斜的key)
+    - [解决方案三：提高shuffle操作的并行度](#解决方案三提高shuffle操作的并行度)
+  - [Spark参数](#spark参数)
+    - [spark.default.parallelism](#sparkdefaultparallelism)
+    - [spark.shuffle.memoryFraction](#sparkshufflememoryfraction)
+    - [spark.shuffle.io.maxRetries](#sparkshuffleiomaxretries)
+    - [spark.shuffle.io.retryWait](#sparkshuffleioretrywait)
+
 
 ------
 
