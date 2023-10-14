@@ -2,7 +2,7 @@
 
 <!-- GFM-TOC -->
 
-<!-- GFM-TOC -->- [Spark](#spark)
+<!-- GFM-TOC -->
 - [Spark](#spark)
   - [Spark的基础架构？](#spark的基础架构)
     - [Driver是怎么去调用excutor的?](#driver是怎么去调用excutor的)
@@ -55,6 +55,14 @@ Executor：执行器，是为某个Application运行在worker node上的一个�
 driver首先会向集群管理者（standalone、yarn，mesos）申请spark应用所需的资源，也就是executor，然后集群管理者会根据spark应用所设置的参数在各个worker上分配一定数量的executor，每个executor都占用一定数量的cpu和memory。在申请到应用所需的资源以后，driver就开始调度和执行我们编写的应用代码了。
 driver进程会将我们编写的spark应用代码拆分成多个stage，每个stage执行一部分代码片段，并为每个stage创建一批tasks，然后将这些tasks分配到各个executor中执行。
 
+1. 客户端提交作业
+2. Driver启动流程
+3. Driver申请资源并启动其余Executor(即Container)
+4. Executor启动流程
+5. 作业调度，生成stages与tasks。
+6. Task调度到Executor上，Executor启动线程执行Task逻辑
+7. Driver管理Task状态
+8. Task完成，Stage完成，作业完成
 
 </details>
 
@@ -81,6 +89,7 @@ RDD的英文全名是Resilient Distributed Dataset，弹性分布式数据集
 <details>
 <summary>展开</summary>
 根据spark的源码, 一个RDD当中包含以下内容：
+
 + 它是一组分区，分区是spark中数据集的最小单位。
 + 数据和计算之间的映射关系就存储在RDD中。
 </details>
