@@ -26,7 +26,7 @@ SELECT sum(v)
 + UnresolvedRelation t1  --> id#0 value#1
   
   t1 和 t2 表已经解析成带有 id、value、cid 以及 did 四个列的表，其中这个表的数据源来自于 csv 文件。而且每个列的位置和数据类型已经确定了
-
+![Unresolved.png](./_v_images/Spark_DAG_Unresolved.png)
 ## 优化后的逻辑执行计划
 ### 谓词下推
 什么是谓词：where后面的操作。
@@ -43,11 +43,13 @@ SELECT * FROM table WHERE i = 5 AND j = i + 3 可以转换成 SELECT * FROM tabl
 ### 常量累加
 1+2 = 3
 
+![Spark_DAG_Optimize.png](./_v_images/Spark_DAG_Optimize.png)
 # 物理执行计划
 + Aggragate --> HashAggregate
 + Join --> BroadHashJoin
 + Join前加上一个BroadcastExchange，可以对小表进行广播。因为之后要做BroadHashJoin，就先做了BroadcastExchange，再做下一步的join连接操作。
 
+![Spark_DAG_Physical.png](./_v_images/Spark_DAG_Physical.png)
 # WholeStageCodegen
 最后变成Spark可执行的。
 把图片反过来，比如就是先filter 然后join 然后返回project，第一步加上scan，最后一步加上result。
@@ -80,23 +82,41 @@ WholeStageCodegen_1:
 Filter --> Project --> Join -->Project --> HashAggragate
 ```
 
+![Spark_DAG_WholeDAG.png](./_v_images/Spark_DAG_WholeDAG.png)
 ## Cache操作
 如果数据被缓存在内存中（例如，使用缓存或者将数据加载到内存中），那么 InmemoryTableScan 可能被使用，它表示数据可以从内存中快速读取，而不是从磁盘中读取。
 
 ## 多个WholeStageCodegen的情况
-EXP L1
+
+![Spark_DAG_L1.png](./_v_images/Spark_DAG_L1.png)
+EXP L1(org.bingviz.mt.dw.layers.topics.exp.ProduceExpL1$)
 ```
-Scan
+Scan parquet bingviz.xx
 WholeStageCodegen
 InmemoryTableScan
 WholeStageCodegen
 Exchange
 ```
 代码
-```
-select all
-expl1.cache
-expl1.filter 
-expl1Core.repartition
+``` 
+
+select all ： 
+expl1 = spark.sql(
+      s"""
+         | SELECT t.`(date)?+.+`
+         | FROM bingviz.$SrcTableName as t
+         | WHERE date = '$date'
+         |""".stripMargin)
+
+expl1.cache()
+
+expl1.filter ：
+val expl1Core = expl1.filter(udfIsExPCoreEvent(col("event_name"), col("event_type")))
+
+expl1Core.repartition：
+expl1Core.repartition(BingVizDWConstants.PartitionXHigh, col("install_id"))
+      .write
+      .mode(SaveMode.Overwrite)
+      .parquet(adlCosmosExpL1KeyTotalPath)
 
 ```
