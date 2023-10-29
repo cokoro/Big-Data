@@ -152,7 +152,16 @@ RDD运行流程：RDD在Spark中运行大概分为以下三步：
 + repartition实际上是调用的coalesce，进行shuffle。
 + coalesce一般为缩减分区，如果扩大分区，不使用shuffle是没有意义的，repartition扩大分区执行shuffle。
 #### 使用 broadcast 替代 join：
-			
+Spark 会采用的join方法。
++ 小表对大表（broadcast join）：
+  将小表的数据分发到每个节点上
++ Shuffle Hash Join：利用key相同必然分区相同的这个原理，SparkSQL将较大表的join分而治之，先将表划分成n个分区，再对两个表中相对应分区的数据分别进行Hash Join
++ Sort Merge Join： 分区后对每个分区内的数据进行排序，排序后再对相应的分区内的记录进行连接
+
+  因为两个序列都是有序的，从头遍历，碰到key相同的就输出；如果不同，左边小就继续取左边，反之取右边.
+  ![Spark_join.png](./_v_images/Spark_join.png)
+
+
 #### 换方法(distinct and group by)：
 			SQL> select num from t1 group by num;
 ##### 为什么？
@@ -196,6 +205,8 @@ repartitionAndSortWithinPartitions是Spark官网推荐的一个算子，官方�
 + 方案优点：实现起来简单便捷，效果还非常好，完全规避掉了数据倾斜，Spark作业的性能会大幅度提升。
 + 方案缺点：治标不治本，Hive ETL中还是会发生数据倾斜。
 + 方案实践经验：在一些Java系统与Spark结合使用的项目中，会出现Java代码频繁调用Spark作业的场景，而且对Spark作业的执行性能要求很高，就比较适合使用这种方案。将数据倾斜提前到上游的Hive ETL，每天仅执行一次，只有那一次是比较慢的，而之后每次Java调用Spark作业时，执行速度都会很快，能够提供更好的用户体验。
++ 方案实现思路：此时可以评估一下，是否可以通过Hive来进行数据预处理（即通过Hive ETL预先对数据按照key进行聚合，或者是预先和其他表进行join），然后在Spark作业中针对的数据源就不是原来的Hive表了，而是预处理后的Hive表。此时由于数据已经预先进行过聚合或join操作了，那么在Spark作业中也就不需要使用原先的shuffle类算子执行这类操作了。
+  
 ### 解决方案二：过滤少数导致倾斜的key
 
 + 方案优点：实现简单，而且效果也很好，可以完全规避掉数据倾斜。
@@ -209,6 +220,7 @@ spark.sql.shuffle.partitions 参数代表了shuffle read task的并行度，该�
 From <https://tech.meituan.com/2016/05/12/spark-tuning-pro.html> 
 
 + 方案实现原理：增加shuffle read task的数量，可以让原本分配给一个task的多个key分配给多个task，从而让每个task处理比原来更少的数据。举例来说，如果原本有5个key，每个key对应10条数据，这5个key都是分配给一个task的，那么这个task就要处理50条数据。而增加了shuffle read task以后，每个task就分配到一个key，即每个task就处理10条数据，那么自然每个task的执行时间都会变短了。
+  ![Saprk_ShuffleTask.png](./_v_images/Saprk_ShuffleTask.png)
 + 方案优点：实现起来比较简单，可以有效缓解和减轻数据倾斜的影响。
 + 方案缺点：只是缓解了数据倾斜而已，没有彻底根除问题，根据实践经验来看，其效果有限。
 + 方案实践经验：该方案通常无法彻底解决数据倾斜，因为如果出现一些极端情况，比如某个key对应的数据量有100万，那么无论你的task数量增加到多少，这个对应着100万数据的key肯定还是会分配到一个task中去处理，因此注定还是会发生数据倾斜的。所以这种方案只能说是在发现数据倾斜时尝试使用的第一种手段，尝试去用嘴简单的方法缓解数据倾斜而已，或者是和其他方案结合起来使用。
