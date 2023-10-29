@@ -28,7 +28,15 @@
     - [解决方案一：使用Hive ETL预处理数据](#解决方案一使用hive-etl预处理数据)
     - [解决方案二：过滤少数导致倾斜的key](#解决方案二过滤少数导致倾斜的key)
     - [解决方案三：提高shuffle操作的并行度](#解决方案三提高shuffle操作的并行度)
+    - [如何判断数据倾斜？](#如何判断数据倾斜)
   - [Spark参数](#spark参数)
+  - [常见参数](#常见参数)
+    - [num-executors / -numExecutors](#num-executors---numexecutors)
+    - [executor-memory / executorMemory](#executor-memory--executormemory)
+    - [executor-cores / executorCores](#executor-cores--executorcores)
+    - [driver-memory](#driver-memory)
+    - [spark.storage.memoryFraction](#sparkstoragememoryfraction)
+  - [重要参数](#重要参数)
     - [spark.default.parallelism](#sparkdefaultparallelism)
     - [spark.shuffle.memoryFraction](#sparkshufflememoryfraction)
     - [spark.shuffle.io.maxRetries](#sparkshuffleiomaxretries)
@@ -200,18 +208,59 @@ spark.sql.shuffle.partitions 参数代表了shuffle read task的并行度，该�
 
 From <https://tech.meituan.com/2016/05/12/spark-tuning-pro.html> 
 
-+ 方案实现原理：增加shuffle read task的数量，可以让原本分配给一个task的多个key分配给多个task，从而让每个task处理比原来更少的数据。举例来说，如果原本有5个key，每个key对应10条数据，这5个key都是分配给一个task的，那么这个task就要处理50条数据。而增加了shuffle read task以后，每个task就分配到一个key，即每个task就处理10条数据，那么自然每个task的执行时间都会变短了。具体原理如下图所示。
++ 方案实现原理：增加shuffle read task的数量，可以让原本分配给一个task的多个key分配给多个task，从而让每个task处理比原来更少的数据。举例来说，如果原本有5个key，每个key对应10条数据，这5个key都是分配给一个task的，那么这个task就要处理50条数据。而增加了shuffle read task以后，每个task就分配到一个key，即每个task就处理10条数据，那么自然每个task的执行时间都会变短了。
 + 方案优点：实现起来比较简单，可以有效缓解和减轻数据倾斜的影响。
 + 方案缺点：只是缓解了数据倾斜而已，没有彻底根除问题，根据实践经验来看，其效果有限。
 + 方案实践经验：该方案通常无法彻底解决数据倾斜，因为如果出现一些极端情况，比如某个key对应的数据量有100万，那么无论你的task数量增加到多少，这个对应着100万数据的key肯定还是会分配到一个task中去处理，因此注定还是会发生数据倾斜的。所以这种方案只能说是在发现数据倾斜时尝试使用的第一种手段，尝试去用嘴简单的方法缓解数据倾斜而已，或者是和其他方案结合起来使用。
 
+### 如何判断数据倾斜？
+通过Spark Web UI查看报错的那个stage的各个task的运行时间以及分配的数据量，才能确定是否是由于数据倾斜才导致了这次内存溢出。
+
 ## Spark参数
+
+Spark运行图
+![Spark_Overview_Parameters.png](./_v_images/Spark_Overview_Parameters.png)
+涉及的参数
++ num-executors：excutor数量
++ executor-memory
++ executor-cores
++ driver-memory
++ spark.storage.memoryFraction：数据在Executor内存中能占的比例
++ spark.shuffle.memoryFraction：聚合操作用的内存
+## 常见参数
+### num-executors / -numExecutors 
+  + 参数说明：该参数用于设置Spark作业总共要用多少个Executor进程来执行。Driver在向YARN集群管理器申请资源时，YARN集群管理器会尽可能按照你的设置来在集群的各个工作节点上，启动相应数量的Executor进程。这个参数非常之重要，如果不设置的话，默认只会给你启动少量的Executor进程，此时你的Spark作业的运行速度是非常慢的。
+  + 参数调优建议：每个Spark作业的运行一般设置50~100个左右的Executor进程比较合适，设置太少或太多的Executor进程都不好。设置的太少，无法充分利用集群资源；设置的太多的话，大部分队列可能无法给予充分的资源。
+  + Example: 在代码中，其他条件完全相同的情况下，numExecutors设置为150个，运行46min。设置为100个，运行2h+。
+  
+### executor-memory / executorMemory
+  + 参数说明：该参数用于设置每个Executor进程的内存。
+  + 参数调优建议：每个Executor进程的内存设置4G~8G较为合适。
+  + Example：较大的job可设置为12
+
+### executor-cores / executorCores
+  + 参数说明：该参数用于设置每个Executor进程的CPU core数量。这个参数决定了每个Executor进程并行执行task线程的能力。因为每个CPU core同一时间只能执行一个task线程
+  + 参数调优建议：Executor的CPU core数量设置为2~4个较为合适。
+  + executorCores设置为2的时候，一个excutor里面只能跑两个task吗？<details>
+    <summary>展开</summary>
+    一个excutor里面可以有80多个task，但在同一时间只能并行执行两个。
+    </details>	
+### driver-memory
++ 默认值：1G
++ 唯一需要注意的一点是，如果需要使用collect算子将RDD的数据全部拉取到Driver上进行处理，那么必须确保Driver的内存足够大
+
+### spark.storage.memoryFraction
++ 参数说明：该参数用于设置RDD持久化数据在Executor内存中能占的比例，默认是0.6。也就是说，默认Executor 60%的内存，可以用来保存持久化的RDD数据。根据你选择的不同的持久化策略，如果内存不够时，可能数据就不会持久化，或者数据会写入磁盘。
++ 参数调优建议：如果Spark作业中，有较多的RDD持久化操作，该参数的值可以适当提高一些，保证持久化的数据能够容纳在内存中。避免内存不够缓存所有的数据，导致数据只能写入磁盘中，降低了性能。但是如果Spark作业中的shuffle类操作比较多，而持久化操作比较少，那么这个参数的值适当降低一些比较合适。
++ Example： 如果发现作业由于频繁的gc导致运行缓慢（通过spark web ui可以观察到作业的gc耗时），意味着task执行用户代码的内存不够用，那么同样建议调低这个参数的值。
+
+## 重要参数
 ### spark.default.parallelism
 	• 参数说明：该参数用于设置每个stage的默认task数量。这个参数极为重要，如果不设置可能会直接影响你的Spark作业性能。
 	• 参数调优建议：Spark作业的默认task数量为500~1000个较为合适。很多同学常犯的一个错误就是不去设置这个参数，那么此时就会导致Spark自己根据底层HDFS的block数量来设置task的数量，默认是一个HDFS block对应一个task。通常来说，Spark默认设置的数量是偏少的（比如就几十个task），如果task数量偏少的话，就会导致你前面设置好的Executor的参数都前功尽弃。试想一下，无论你的Executor进程有多少个，内存和CPU有多大，但是task只有1个或者10个，那么90%的Executor进程可能根本就没有task执行，也就是白白浪费了资源！因此Spark官网建议的设置原则是，设置该参数为num-executors * executor-cores的2~3倍较为合适，比如Executor的总CPU core数量为300个，那么设置1000个task是可以的，此时可以充分地利用Spark集群的资源。
+	• Example：跑job的时候确实有额外把这个值设置为1000， excutor的数量为100个。cores为2个，最后每个stage 下面有8000多个task，每个excutor处理了80多个task。
 
 
-PS:jiarui确实设置了啊！！！ 
 
 
 ### spark.shuffle.memoryFraction

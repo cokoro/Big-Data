@@ -120,3 +120,9 @@ expl1Core.repartition(BingVizDWConstants.PartitionXHigh, col("install_id"))
       .parquet(adlCosmosExpL1KeyTotalPath)
 
 ```
+#### 为什么有两个exchange？
+一个是mappartition，一个是shufflepartition。如果这个map后面涉及了重新分区。就会出现在exchange里面。如果只是map就会在wholecodestagegen里面，wholecodestagegen自己给它做优化
+
+#### Code，Job，Stage，Excutor和Task之间的关系？
+
+一个文件里面可能有多个job，比如L1就是3个。点进去，每个job有几个stage。比如164行有2个stage。每个红色框框是一个stage。每个stage里面都有100个excutor和200-8000个task。每个excutor里面有2-N个task在运行。
